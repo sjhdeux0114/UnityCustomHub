@@ -98,6 +98,14 @@ Visual Studio 2022(또는 MSBuild)가 설치된 환경에서 원클릭으로 빌
 - [`build.bat`](build.bat) 더블 클릭
 - 빌드 결과물은 `bin\Release\UnityHubCustom.exe`에 생성됩니다.
 
+### 3. 윈도우 프로그램 등록 (Register / Install)
+별도 설치 프로그램 없이도 원클릭으로 윈도우 정식 프로그램으로 등록할 수 있습니다.
+- [`register.bat`](register.bat) 더블 클릭:
+  - 시작 메뉴 및 Windows 검색창(`Win + S`)에 등록
+  - Windows 설정의 [설치된 앱] 목록에 정식 프로그램으로 등록
+  - `Win + R` 창에서 `UnityHubCustom`만 입력하여 즉시 실행 가능
+- [`unregister.bat`](unregister.bat) 더블 클릭: 등록된 바로가기 및 레지스트리 깔끔하게 제거
+
 ---
 
 ## 📁 프로젝트 구조
