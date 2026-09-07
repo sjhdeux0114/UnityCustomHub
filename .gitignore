@@ -1,0 +1,16 @@
+# Visual Studio / MSBuild
+[Bb]in/
+[Oo]bj/
+.vs/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+
+# Build Results
+[Dd]ebug/
+[Rr]elease/
+
+# OS
+Thumbs.db
+[Dd]esktop.ini
