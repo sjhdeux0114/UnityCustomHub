@@ -71,7 +71,6 @@ namespace UnityHubCustom
             ChkResetProjectLayout.IsChecked = _settings.ResetProjectLayout;
             ChkResetEditorLayout.IsChecked = _settings.ResetEditorLayout;
             ChkResetRegistry.IsChecked = _settings.ResetRegistry;
-            ChkBackupBeforeReset.IsChecked = _settings.BackupBeforeReset;
             ChkSyncUnityHub.IsChecked = _settings.AutoSyncWithUnityHub;
 
             _detectionService.SetCustomPaths(_settings.CustomEditorPaths);
@@ -87,7 +86,6 @@ namespace UnityHubCustom
                 _settings.ResetProjectLayout = ChkResetProjectLayout.IsChecked ?? true;
                 _settings.ResetEditorLayout = ChkResetEditorLayout.IsChecked ?? true;
                 _settings.ResetRegistry = ChkResetRegistry.IsChecked ?? true;
-                _settings.BackupBeforeReset = ChkBackupBeforeReset.IsChecked ?? true;
                 _settings.AutoSyncWithUnityHub = ChkSyncUnityHub.IsChecked ?? true;
 
                 var json = JsonHelper.Serialize(_settings);
@@ -272,11 +270,10 @@ namespace UnityHubCustom
                 var resetProj = ChkResetProjectLayout.IsChecked ?? true;
                 var resetEd = ChkResetEditorLayout.IsChecked ?? true;
                 var resetReg = ChkResetRegistry.IsChecked ?? true;
-                var backup = ChkBackupBeforeReset.IsChecked ?? true;
 
                 LogMessage($"[{project.Name}] 레이아웃 초기화 작업 시작...");
 
-                var resetResult = _resetService.ResetLayouts(project.Path, resetProj, resetEd, resetReg, backup);
+                var resetResult = _resetService.ResetLayouts(project.Path, resetProj, resetEd, resetReg);
 
                 foreach (var msg in resetResult.Messages)
                 {
@@ -347,8 +344,7 @@ namespace UnityHubCustom
                         project.Path,
                         ChkResetProjectLayout.IsChecked ?? true,
                         ChkResetEditorLayout.IsChecked ?? true,
-                        ChkResetRegistry.IsChecked ?? true,
-                        ChkBackupBeforeReset.IsChecked ?? true);
+                        ChkResetRegistry.IsChecked ?? true);
 
                     foreach (var msg in resetResult.Messages)
                     {

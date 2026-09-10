@@ -10,7 +10,6 @@ namespace UnityHubCustom.Models
         public bool ResetProjectLayout { get; set; } = true;
         public bool ResetEditorLayout { get; set; } = true;
         public bool ResetRegistry { get; set; } = true;
-        public bool BackupBeforeReset { get; set; } = true;
         public bool AutoSyncWithUnityHub { get; set; } = true;
     }
 }

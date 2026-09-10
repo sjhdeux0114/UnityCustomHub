@@ -34,7 +34,7 @@
 | **설치된 에디터 자동 감지 (`Unity.exe`)** | ✅ | ✅ |
 | **일반 프로젝트 열기 (`▶ 열기`)** | ✅ | ✅ |
 | **⚡ 리셋후 열기 (레이아웃 완전 초기화)** | ❌ | **✅ (프로젝트 + 에디터 전역 초기화)** |
-| **프로젝트별 레이아웃 자동 백업** | ❌ | **✅ (`Layouts_Backup` 자동 보관)** |
+| **레이아웃 클린 삭제 (백업 없이 즉시 제거)** | ❌ | **✅ (UserSettings/Library 레이아웃 완전 정리)** |
 | **초경량 독립 실행 파일** | ❌ (~200MB Electron) | **✅ (~500KB 단일 Exe, 무설치)** |
 
 ---
@@ -45,7 +45,7 @@
 
 ```mermaid
 flowchart LR
-    A[⚡ 리셋후 열기 클릭] --> B[프로젝트 레이아웃 백업 및 삭제]
+    A[⚡ 리셋후 열기 클릭] --> B[프로젝트 레이아웃 완전 삭제]
     B --> C[AppData 전역 레이아웃 캐시 삭제]
     C --> D[Windows 레지스트리 윈도우 좌표 초기화]
     D --> E[Unity Editor 기본 순정 레이아웃으로 실행]
@@ -54,7 +54,7 @@ flowchart LR
 1. **프로젝트 레이아웃 (Project Layout) 초기화**:
    - `<ProjectRoot>\UserSettings\Layouts\*` (예: `default-2023.dwlt`) 삭제
    - `<ProjectRoot>\Library\CurrentLayout*.dwlt` 및 `CurrentMaximizeLayout.dwlt` 삭제
-   - *(안전을 위해 삭제 직전 `<ProjectRoot>\UserSettings\Layouts_Backup_<timestamp>`에 자동 백업)*
+   - *(불필요한 백업 폴더 없이 바로 완전 삭제)*
 2. **에디터 전역 레이아웃 (Editor Global Layout) 초기화**:
    - `%APPDATA%\Unity\Editor-5.x\Preferences\Layouts\current\*` 캐시 파일 삭제
 3. **Windows 레지스트리 좌표 초기화**:
@@ -81,7 +81,7 @@ flowchart LR
   - `+ 에디터 수동 찾기` 버튼으로 사용자 지정 경로의 `Unity.exe` 등록 가능
 - **설정 및 로그 탭 (Settings & Logs)**:
   - 초기화 항목별 On/Off 체크박스
-  - 자동 백업 생성 On/Off
+  - Unity Hub 자동 동기화 On/Off
   - 실시간 작업 및 실행 활동 로그 뷰어
 
 ---

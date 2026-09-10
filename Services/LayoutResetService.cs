@@ -12,7 +12,6 @@ namespace UnityHubCustom.Services
         public int ProjectLayoutFilesDeleted { get; set; }
         public int EditorLayoutFilesDeleted { get; set; }
         public int RegistryValuesDeleted { get; set; }
-        public string BackupPath { get; set; }
         public List<string> Messages { get; set; } = new List<string>();
         public List<string> Errors { get; set; } = new List<string>();
 
@@ -22,7 +21,7 @@ namespace UnityHubCustom.Services
 
     public class LayoutResetService
     {
-        public ResetResult ResetLayouts(string projectPath, bool resetProject = true, bool resetEditor = true, bool resetRegistry = true, bool backup = true)
+        public ResetResult ResetLayouts(string projectPath, bool resetProject = true, bool resetEditor = true, bool resetRegistry = true)
         {
             var result = new ResetResult();
 
@@ -36,13 +35,13 @@ namespace UnityHubCustom.Services
             // 1. Reset Project-specific Layouts
             if (resetProject)
             {
-                ResetProjectLayout(projectPath, backup, result);
+                ResetProjectLayout(projectPath, result);
             }
 
             // 2. Reset Unity Editor Global Layout Cache
             if (resetEditor)
             {
-                ResetGlobalEditorLayout(backup, result);
+                ResetGlobalEditorLayout(result);
             }
 
             // 3. Reset Windows Registry Layout Entries
@@ -54,7 +53,7 @@ namespace UnityHubCustom.Services
             return result;
         }
 
-        private void ResetProjectLayout(string projectPath, bool backup, ResetResult result)
+        private void ResetProjectLayout(string projectPath, ResetResult result)
         {
             try
             {
@@ -62,22 +61,6 @@ namespace UnityHubCustom.Services
                 var userSettingsLayouts = Path.Combine(projectPath, "UserSettings", "Layouts");
                 if (Directory.Exists(userSettingsLayouts))
                 {
-                    if (backup)
-                    {
-                        var timestamp = DateTime.Now.ToString("yyyyMMdd_HHmmss");
-                        var backupDir = Path.Combine(projectPath, "UserSettings", $"Layouts_Backup_{timestamp}");
-                        try
-                        {
-                            DirectoryCopy(userSettingsLayouts, backupDir, true);
-                            result.BackupPath = backupDir;
-                            result.Messages.Add($"프로젝트 레이아웃 백업 생성: {backupDir}");
-                        }
-                        catch (Exception ex)
-                        {
-                            result.Messages.Add($"백업 생성 경고: {ex.Message}");
-                        }
-                    }
-
                     var dwltFiles = Directory.GetFiles(userSettingsLayouts, "*.*", SearchOption.AllDirectories);
                     foreach (var file in dwltFiles)
                     {
@@ -100,11 +83,51 @@ namespace UnityHubCustom.Services
                     catch { }
                 }
 
+                // Clean up any existing Layouts_Backup_* folders in UserSettings
+                var userSettingsDir = Path.Combine(projectPath, "UserSettings");
+                if (Directory.Exists(userSettingsDir))
+                {
+                    try
+                    {
+                        var backupDirs = Directory.GetDirectories(userSettingsDir, "Layouts_Backup_*");
+                        foreach (var bDir in backupDirs)
+                        {
+                            try
+                            {
+                                var bFiles = Directory.GetFiles(bDir, "*.*", SearchOption.AllDirectories);
+                                result.ProjectLayoutFilesDeleted += bFiles.Length;
+                                Directory.Delete(bDir, true);
+                            }
+                            catch { }
+                        }
+                    }
+                    catch { }
+
+                    try
+                    {
+                        var looseDwltFiles = Directory.GetFiles(userSettingsDir, "*.dwlt", SearchOption.TopDirectoryOnly);
+                        foreach (var file in looseDwltFiles)
+                        {
+                            try
+                            {
+                                File.Delete(file);
+                                result.ProjectLayoutFilesDeleted++;
+                            }
+                            catch (Exception ex)
+                            {
+                                result.Errors.Add($"UserSettings 레이아웃 파일 삭제 실패 ({Path.GetFileName(file)}): {ex.Message}");
+                            }
+                        }
+                    }
+                    catch { }
+                }
+
                 // B. Library/CurrentLayout*.dwlt
                 var libraryDir = Path.Combine(projectPath, "Library");
                 if (Directory.Exists(libraryDir))
                 {
                     var libraryLayoutPatterns = new[] { "CurrentLayout*.dwlt", "CurrentMaximizeLayout.dwlt", "*.dwlt" };
+                    var deletedPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
                     foreach (var pattern in libraryLayoutPatterns)
                     {
                         try
@@ -112,14 +135,17 @@ namespace UnityHubCustom.Services
                             var files = Directory.GetFiles(libraryDir, pattern, SearchOption.TopDirectoryOnly);
                             foreach (var file in files)
                             {
-                                try
+                                if (deletedPaths.Add(file))
                                 {
-                                    File.Delete(file);
-                                    result.ProjectLayoutFilesDeleted++;
-                                }
-                                catch (Exception ex)
-                                {
-                                    result.Errors.Add($"Library 레이아웃 파일 삭제 실패 ({Path.GetFileName(file)}): {ex.Message}");
+                                    try
+                                    {
+                                        File.Delete(file);
+                                        result.ProjectLayoutFilesDeleted++;
+                                    }
+                                    catch (Exception ex)
+                                    {
+                                        result.Errors.Add($"Library 레이아웃 파일 삭제 실패 ({Path.GetFileName(file)}): {ex.Message}");
+                                    }
                                 }
                             }
                         }
@@ -135,7 +161,7 @@ namespace UnityHubCustom.Services
             }
         }
 
-        private void ResetGlobalEditorLayout(bool backup, ResetResult result)
+        private void ResetGlobalEditorLayout(ResetResult result)
         {
             try
             {
@@ -144,18 +170,6 @@ namespace UnityHubCustom.Services
 
                 if (Directory.Exists(currentLayoutDir))
                 {
-                    if (backup)
-                    {
-                        var timestamp = DateTime.Now.ToString("yyyyMMdd_HHmmss");
-                        var backupDir = Path.Combine(appData, "Unity", "Editor-5.x", "Preferences", "Layouts", $"backup_current_{timestamp}");
-                        try
-                        {
-                            DirectoryCopy(currentLayoutDir, backupDir, true);
-                            result.Messages.Add($"에디터 레이아웃 백업 생성: {backupDir}");
-                        }
-                        catch { }
-                    }
-
                     var files = Directory.GetFiles(currentLayoutDir, "*.*", SearchOption.AllDirectories);
                     foreach (var file in files)
                     {
@@ -169,6 +183,33 @@ namespace UnityHubCustom.Services
                             result.Errors.Add($"에디터 레이아웃 캐시 삭제 실패 ({Path.GetFileName(file)}): {ex.Message}");
                         }
                     }
+
+                    try
+                    {
+                        Directory.Delete(currentLayoutDir, true);
+                    }
+                    catch { }
+                }
+
+                // Clean up any existing backup_current_* folders in Editor Layouts
+                var editorLayoutsDir = Path.Combine(appData, "Unity", "Editor-5.x", "Preferences", "Layouts");
+                if (Directory.Exists(editorLayoutsDir))
+                {
+                    try
+                    {
+                        var backupDirs = Directory.GetDirectories(editorLayoutsDir, "backup_current_*");
+                        foreach (var bDir in backupDirs)
+                        {
+                            try
+                            {
+                                var bFiles = Directory.GetFiles(bDir, "*.*", SearchOption.AllDirectories);
+                                result.EditorLayoutFilesDeleted += bFiles.Length;
+                                Directory.Delete(bDir, true);
+                            }
+                            catch { }
+                        }
+                    }
+                    catch { }
                 }
 
                 result.Messages.Add($"에디터 전역 레이아웃 캐시 초기화 완료 ({result.EditorLayoutFilesDeleted}개 파일 삭제)");
@@ -218,34 +259,6 @@ namespace UnityHubCustom.Services
             catch (Exception ex)
             {
                 result.Errors.Add($"레지스트리 초기화 중 오류: {ex.Message}");
-            }
-        }
-
-        private static void DirectoryCopy(string sourceDirName, string destDirName, bool copySubDirs)
-        {
-            var dir = new DirectoryInfo(sourceDirName);
-            if (!dir.Exists) return;
-
-            var dirs = dir.GetDirectories();
-            if (!Directory.Exists(destDirName))
-            {
-                Directory.CreateDirectory(destDirName);
-            }
-
-            var files = dir.GetFiles();
-            foreach (var file in files)
-            {
-                var temppath = Path.Combine(destDirName, file.Name);
-                file.CopyTo(temppath, true);
-            }
-
-            if (copySubDirs)
-            {
-                foreach (var subdir in dirs)
-                {
-                    var temppath = Path.Combine(destDirName, subdir.Name);
-                    DirectoryCopy(subdir.FullName, temppath, copySubDirs);
-                }
             }
         }
     }
