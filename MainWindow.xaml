@@ -80,7 +80,8 @@
                 <!-- Search and Filters -->
                 <Grid Grid.Row="0" Margin="0,0,0,14">
                     <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="380"/>
+                        <ColumnDefinition Width="340"/>
+                        <ColumnDefinition Width="Auto"/>
                         <ColumnDefinition Width="*"/>
                         <ColumnDefinition Width="Auto"/>
                     </Grid.ColumnDefinitions>
@@ -96,7 +97,16 @@
                                    FontSize="13"/>
                     </Grid>
 
-                    <TextBlock Grid.Column="2" x:Name="TxtProjectCount" Text="0개 프로젝트" Foreground="#A1A1AA" VerticalAlignment="Center" FontSize="13"/>
+                    <!-- Favorite Filter Checkbox/Toggle -->
+                    <CheckBox Grid.Column="1" x:Name="ChkFilterFavorite"
+                              Content="즐겨찾기만 보기"
+                              Style="{StaticResource FavoriteFilterCheckBoxStyle}"
+                              Margin="10,0,0,0"
+                              Checked="ChkFilterFavorite_Changed"
+                              Unchecked="ChkFilterFavorite_Changed"
+                              ToolTip="즐겨찾기로 등록된 프로젝트만 필터링하여 표시합니다."/>
+
+                    <TextBlock Grid.Column="3" x:Name="TxtProjectCount" Text="0개 프로젝트" Foreground="#A1A1AA" VerticalAlignment="Center" FontSize="13"/>
                 </Grid>
 
                 <!-- Projects List -->
@@ -118,12 +128,23 @@
                                     </Border.Style>
                                     <Grid>
                                         <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="Auto"/>
                                             <ColumnDefinition Width="*"/>
                                             <ColumnDefinition Width="Auto"/>
                                         </Grid.ColumnDefinitions>
 
+                                        <!-- Favorite Star Button -->
+                                        <Button Grid.Column="0" Style="{StaticResource StarButtonStyle}"
+                                                Tag="{Binding}" Click="BtnToggleFavorite_Click"
+                                                ToolTip="{Binding FavoriteToolTip}"
+                                                Margin="0,0,12,0" VerticalAlignment="Center">
+                                            <TextBlock Text="{Binding FavoriteIcon}" FontSize="20"
+                                                       Foreground="{Binding FavoriteColor}"
+                                                       HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                        </Button>
+
                                         <!-- Project Info -->
-                                        <StackPanel Grid.Column="0" VerticalAlignment="Center" Margin="0,0,16,0">
+                                        <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="0,0,16,0">
                                             <!-- Top Line: Title & Badges -->
                                             <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
                                                 <TextBlock Text="{Binding Name}" Foreground="#F4F4F5" FontSize="16" FontWeight="Bold" VerticalAlignment="Center"/>
@@ -137,20 +158,35 @@
                                                 <Border Background="#1E293B" CornerRadius="4" Margin="8,0,0,0" Padding="8,2">
                                                     <TextBlock Text="{Binding EditorStatusText}" Foreground="{Binding EditorStatusColor}" FontSize="11" FontWeight="Medium"/>
                                                 </Border>
+
+                                                <!-- Running Status Tag -->
+                                                <Border Background="#064E3B" BorderBrush="#059669" BorderThickness="1" CornerRadius="4" Margin="8,0,0,0" Padding="8,2">
+                                                    <Border.Style>
+                                                        <Style TargetType="Border">
+                                                            <Setter Property="Visibility" Value="Collapsed"/>
+                                                            <Style.Triggers>
+                                                                <DataTrigger Binding="{Binding IsRunning}" Value="True">
+                                                                    <Setter Property="Visibility" Value="Visible"/>
+                                                                </DataTrigger>
+                                                            </Style.Triggers>
+                                                        </Style>
+                                                    </Border.Style>
+                                                    <TextBlock Text="● 실행 중" Foreground="#34D399" FontSize="11" FontWeight="Bold"/>
+                                                </Border>
                                             </StackPanel>
 
                                             <!-- Middle Line: Path -->
                                             <TextBlock Text="{Binding Path}" Foreground="#71717A" FontSize="12" Margin="0,6,0,0" TextTrimming="CharacterEllipsis"/>
 
-                                            <!-- Bottom Line: Last Modified -->
+                                            <!-- Bottom Line: Last Opened -->
                                             <StackPanel Orientation="Horizontal" Margin="0,6,0,0">
-                                                <TextBlock Text="최종 수정: " Foreground="#52525B" FontSize="11"/>
+                                                <TextBlock Text="최근 열림: " Foreground="#52525B" FontSize="11"/>
                                                 <TextBlock Text="{Binding DisplayDate}" Foreground="#A1A1AA" FontSize="11"/>
                                             </StackPanel>
                                         </StackPanel>
 
                                         <!-- Actions -->
-                                        <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                                        <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
                                             <!-- Normal Open -->
                                             <Button Content="▶ 열기" Style="{StaticResource OpenButtonStyle}"
                                                     Margin="0,0,8,0" Padding="14,8"
@@ -168,6 +204,7 @@
                                                     Padding="10,8" Tag="{Binding}" Click="BtnMoreOptions_Click">
                                                 <Button.ContextMenu>
                                                     <ContextMenu Background="#202024" Foreground="#F4F4F5">
+                                                        <MenuItem Header="★ 즐겨찾기 설정/해제" Click="MenuToggleFavorite_Click"/>
                                                         <MenuItem Header="📁 파일 탐색기에서 열기" Click="MenuOpenExplorer_Click"/>
                                                         <MenuItem Header="⚡ 레이아웃만 초기화 (열지 않음)" Click="MenuResetLayoutOnly_Click"/>
                                                         <Separator Background="#3F3F46"/>

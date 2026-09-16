@@ -29,7 +29,7 @@ namespace UnityHubCustom.Services
 
             var list = new List<UnityProject>(projectDict.Values);
 
-            // Verify paths and detect versions if missing
+            // Verify paths, detect versions, and evaluate actual project activity on disk
             foreach (var proj in list)
             {
                 if (Directory.Exists(proj.Path))
@@ -40,13 +40,21 @@ namespace UnityHubCustom.Services
                         proj.Version = detectedVersion;
                     }
 
-                    if (proj.LastModified == DateTime.MinValue)
+                    // Check actual project activity on disk & running status
+                    var diskActivity = GetProjectLatestActivityTime(proj.Path, out bool isRunning);
+                    proj.IsRunning = isRunning;
+
+                    if (diskActivity > proj.LastModified)
                     {
-                        try
-                        {
-                            proj.LastModified = Directory.GetLastWriteTime(proj.Path);
-                        }
-                        catch { }
+                        proj.LastModified = diskActivity;
+                    }
+                    if (diskActivity > proj.LastOpened)
+                    {
+                        proj.LastOpened = diskActivity;
+                    }
+                    if (isRunning && DateTime.Now > proj.LastOpened)
+                    {
+                        proj.LastOpened = DateTime.Now;
                     }
                 }
             }
@@ -99,12 +107,19 @@ namespace UnityHubCustom.Services
                                 try { lastModified = Directory.GetLastWriteTime(path); } catch { }
                             }
 
+                            var isFavorite = false;
+                            if (item.ContainsKey("isFavorite") && bool.TryParse(item["isFavorite"]?.ToString(), out var fav))
+                            {
+                                isFavorite = fav;
+                            }
+
                             var project = new UnityProject
                             {
                                 Name = !string.IsNullOrEmpty(title) ? title : Path.GetFileName(path),
                                 Path = path,
                                 Version = version,
-                                LastModified = lastModified
+                                LastModified = lastModified,
+                                IsFavorite = isFavorite
                             };
 
                             projectDict[path] = project;
@@ -132,7 +147,31 @@ namespace UnityHubCustom.Services
                     {
                         if (!string.IsNullOrWhiteSpace(p.Path))
                         {
-                            projectDict[p.Path] = p;
+                            if (projectDict.TryGetValue(p.Path, out var existing))
+                            {
+                                existing.IsFavorite = p.IsFavorite;
+                                existing.LastOpened = p.LastOpened;
+                                if (p.LastModified > existing.LastModified)
+                                {
+                                    existing.LastModified = p.LastModified;
+                                }
+                                if (string.IsNullOrEmpty(existing.Version) && !string.IsNullOrEmpty(p.Version))
+                                {
+                                    existing.Version = p.Version;
+                                }
+                                if (string.IsNullOrEmpty(existing.Name) && !string.IsNullOrEmpty(p.Name))
+                                {
+                                    existing.Name = p.Name;
+                                }
+                                if (!string.IsNullOrEmpty(p.MatchedEditorPath))
+                                {
+                                    existing.MatchedEditorPath = p.MatchedEditorPath;
+                                }
+                            }
+                            else
+                            {
+                                projectDict[p.Path] = p;
+                            }
                         }
                     }
                 }
@@ -212,6 +251,90 @@ namespace UnityHubCustom.Services
                 Debug.WriteLine("Error detecting project version: " + ex.Message);
             }
             return null;
+        }
+
+        public DateTime GetProjectLatestActivityTime(string projectPath, out bool isRunning)
+        {
+            isRunning = false;
+            if (string.IsNullOrEmpty(projectPath) || !Directory.Exists(projectPath))
+            {
+                return DateTime.MinValue;
+            }
+
+            DateTime latest = DateTime.MinValue;
+
+            // 1. Root directory write time
+            try
+            {
+                var dirTime = Directory.GetLastWriteTime(projectPath);
+                if (dirTime > latest) latest = dirTime;
+            }
+            catch { }
+
+            // 2. Check key folders and files that Unity touches when opened/saved
+            string[] subPaths = new[]
+            {
+                "UserSettings",
+                "Library",
+                "Temp",
+                "Logs",
+                "ProjectSettings",
+                "Assets",
+                Path.Combine("Library", "EditorInstance.json"),
+                Path.Combine("UserSettings", "EditorUserSettings.asset"),
+                Path.Combine("UserSettings", "Layouts"),
+                Path.Combine("ProjectSettings", "ProjectVersion.txt")
+            };
+
+            foreach (var rel in subPaths)
+            {
+                try
+                {
+                    var full = Path.Combine(projectPath, rel);
+                    if (File.Exists(full))
+                    {
+                        var fTime = File.GetLastWriteTime(full);
+                        if (fTime > latest) latest = fTime;
+                    }
+                    else if (Directory.Exists(full))
+                    {
+                        var dTime = Directory.GetLastWriteTime(full);
+                        if (dTime > latest) latest = dTime;
+                    }
+                }
+                catch { }
+            }
+
+            // 3. Check if Unity Editor is currently running this project
+            try
+            {
+                var editorInstancePath = Path.Combine(projectPath, "Library", "EditorInstance.json");
+                if (File.Exists(editorInstancePath))
+                {
+                    var json = File.ReadAllText(editorInstancePath);
+                    var dict = JsonHelper.ParseDictionary(json);
+                    if (dict.TryGetValue("process_id", out var pidObj) && int.TryParse(pidObj?.ToString(), out int pid))
+                    {
+                        try
+                        {
+                            var proc = Process.GetProcessById(pid);
+                            if (!proc.HasExited && proc.ProcessName.IndexOf("Unity", StringComparison.OrdinalIgnoreCase) >= 0)
+                            {
+                                isRunning = true;
+                                try
+                                {
+                                    if (proc.StartTime > latest) latest = proc.StartTime;
+                                }
+                                catch { }
+                            }
+                        }
+                        catch { }
+                    }
+                }
+            }
+            catch { }
+
+            return latest;
         }
     }
 }

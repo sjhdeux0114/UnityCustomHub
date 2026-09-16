@@ -11,5 +11,6 @@ namespace UnityHubCustom.Models
         public bool ResetEditorLayout { get; set; } = true;
         public bool ResetRegistry { get; set; } = true;
         public bool AutoSyncWithUnityHub { get; set; } = true;
+        public bool FilterFavoritesOnly { get; set; } = false;
     }
 }

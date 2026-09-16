@@ -10,9 +10,11 @@ namespace UnityHubCustom.Models
         private string _path;
         private string _version;
         private DateTime _lastModified;
+        private DateTime _lastOpened;
         private bool _isEditorInstalled;
         private string _matchedEditorPath;
         private bool _isFavorite;
+        private bool _isRunning;
 
         public string Name
         {
@@ -39,7 +41,38 @@ namespace UnityHubCustom.Models
             {
                 _lastModified = value;
                 OnPropertyChanged(nameof(LastModified));
+                OnPropertyChanged(nameof(EffectiveDate));
                 OnPropertyChanged(nameof(DisplayDate));
+            }
+        }
+
+        public DateTime LastOpened
+        {
+            get => _lastOpened;
+            set
+            {
+                _lastOpened = value;
+                OnPropertyChanged(nameof(LastOpened));
+                OnPropertyChanged(nameof(EffectiveDate));
+                OnPropertyChanged(nameof(DisplayDate));
+            }
+        }
+
+        public DateTime EffectiveDate => (LastOpened > LastModified)
+            ? LastOpened
+            : LastModified;
+
+        public bool IsRunning
+        {
+            get => _isRunning;
+            set
+            {
+                if (_isRunning != value)
+                {
+                    _isRunning = value;
+                    OnPropertyChanged(nameof(IsRunning));
+                    OnPropertyChanged(nameof(DisplayDate));
+                }
             }
         }
 
@@ -64,12 +97,33 @@ namespace UnityHubCustom.Models
         public bool IsFavorite
         {
             get => _isFavorite;
-            set { _isFavorite = value; OnPropertyChanged(nameof(IsFavorite)); }
+            set
+            {
+                _isFavorite = value;
+                OnPropertyChanged(nameof(IsFavorite));
+                OnPropertyChanged(nameof(FavoriteIcon));
+                OnPropertyChanged(nameof(FavoriteColor));
+                OnPropertyChanged(nameof(FavoriteToolTip));
+            }
         }
 
-        public string DisplayDate => LastModified != DateTime.MinValue 
-            ? LastModified.ToString("yyyy-MM-dd HH:mm") 
-            : "-";
+        public string FavoriteIcon => IsFavorite ? "★" : "☆";
+        public string FavoriteColor => IsFavorite ? "#FBBF24" : "#71717A";
+        public string FavoriteToolTip => IsFavorite ? "즐겨찾기 해제" : "즐겨찾기에 추가";
+
+        public string DisplayDate
+        {
+            get
+            {
+                var dt = EffectiveDate;
+                if (dt == DateTime.MinValue) return "-";
+                if (IsRunning)
+                {
+                    return $"{dt:yyyy-MM-dd HH:mm} (실행 중)";
+                }
+                return dt.ToString("yyyy-MM-dd HH:mm");
+            }
+        }
 
         public string EditorStatusText => IsEditorInstalled ? "에디터 설치됨" : "에디터 미설치";
         public string EditorStatusColor => IsEditorInstalled ? "#10B981" : "#EF4444"; // Green or Red

@@ -37,6 +37,7 @@ namespace UnityHubCustom
             InstallsItemsControl.ItemsSource = _installedEditors;
 
             Loaded += MainWindow_Loaded;
+            Activated += MainWindow_Activated;
         }
 
         private void MainWindow_Loaded(object sender, RoutedEventArgs e)
@@ -44,6 +45,33 @@ namespace UnityHubCustom
             LoadSettings();
             RefreshAll();
             LogMessage("Unity Hub+ 초기화 완료. 환영합니다!");
+        }
+
+        private void MainWindow_Activated(object sender, EventArgs e)
+        {
+            // Quickly check running status and recent disk activity when window gets focus
+            bool changed = false;
+            foreach (var proj in _allProjects)
+            {
+                var diskActivity = _projectService.GetProjectLatestActivityTime(proj.Path, out bool isRunning);
+                if (proj.IsRunning != isRunning)
+                {
+                    proj.IsRunning = isRunning;
+                    changed = true;
+                }
+                if (diskActivity > proj.LastOpened)
+                {
+                    proj.LastOpened = diskActivity;
+                    changed = true;
+                }
+            }
+
+            if (changed)
+            {
+                SortProjects();
+                ApplyProjectFilter();
+                _projectService.SaveCustomProjects(_allProjects);
+            }
         }
 
         #region Settings Management
@@ -72,6 +100,10 @@ namespace UnityHubCustom
             ChkResetEditorLayout.IsChecked = _settings.ResetEditorLayout;
             ChkResetRegistry.IsChecked = _settings.ResetRegistry;
             ChkSyncUnityHub.IsChecked = _settings.AutoSyncWithUnityHub;
+            if (ChkFilterFavorite != null)
+            {
+                ChkFilterFavorite.IsChecked = _settings.FilterFavoritesOnly;
+            }
 
             _detectionService.SetCustomPaths(_settings.CustomEditorPaths);
         }
@@ -87,6 +119,7 @@ namespace UnityHubCustom
                 _settings.ResetEditorLayout = ChkResetEditorLayout.IsChecked ?? true;
                 _settings.ResetRegistry = ChkResetRegistry.IsChecked ?? true;
                 _settings.AutoSyncWithUnityHub = ChkSyncUnityHub.IsChecked ?? true;
+                _settings.FilterFavoritesOnly = ChkFilterFavorite?.IsChecked ?? false;
 
                 var json = JsonHelper.Serialize(_settings);
                 File.WriteAllText(SettingsFilePath, json);
@@ -143,20 +176,42 @@ namespace UnityHubCustom
                 _allProjects.Add(proj);
             }
 
-            // Sort by LastModified descending
-            _allProjects.Sort((a, b) => b.LastModified.CompareTo(a.LastModified));
+            // Sort by Running status first, then EffectiveDate descending
+            SortProjects();
+
+            // Persist the refreshed project states so updated dates are retained
+            _projectService.SaveCustomProjects(_allProjects);
 
             ApplyProjectFilter();
             LogMessage($"프로젝트 {_allProjects.Count}개 로드 완료.");
         }
 
+        private void SortProjects()
+        {
+            _allProjects.Sort((a, b) =>
+            {
+                // Running projects always on top
+                if (a.IsRunning != b.IsRunning)
+                {
+                    return a.IsRunning ? -1 : 1;
+                }
+
+                int dateCmp = b.EffectiveDate.CompareTo(a.EffectiveDate);
+                if (dateCmp != 0) return dateCmp;
+                return string.Compare(a.Name, b.Name, StringComparison.OrdinalIgnoreCase);
+            });
+        }
+
         private void ApplyProjectFilter()
         {
             var query = TxtSearch.Text?.Trim().ToLowerInvariant() ?? "";
+            var favoritesOnly = ChkFilterFavorite?.IsChecked == true;
             _filteredProjects.Clear();
 
             foreach (var p in _allProjects)
             {
+                if (favoritesOnly && !p.IsFavorite) continue;
+
                 if (string.IsNullOrEmpty(query) ||
                     (!string.IsNullOrEmpty(p.Name) && p.Name.ToLowerInvariant().Contains(query)) ||
                     (!string.IsNullOrEmpty(p.Path) && p.Path.ToLowerInvariant().Contains(query)))
@@ -165,7 +220,14 @@ namespace UnityHubCustom
                 }
             }
 
-            TxtProjectCount.Text = $"{_filteredProjects.Count}개 프로젝트";
+            if (favoritesOnly)
+            {
+                TxtProjectCount.Text = $"즐겨찾기 {_filteredProjects.Count}개 (전체 {_allProjects.Count}개)";
+            }
+            else
+            {
+                TxtProjectCount.Text = $"{_filteredProjects.Count}개 프로젝트";
+            }
         }
 
         private void UpdateStatusSummary()
@@ -196,7 +258,7 @@ namespace UnityHubCustom
 
         #endregion
 
-        #region Search
+        #region Search & Filters
 
         private void TxtSearch_TextChanged(object sender, TextChangedEventArgs e)
         {
@@ -205,6 +267,12 @@ namespace UnityHubCustom
                 TxtSearchPlaceholder.Visibility = string.IsNullOrEmpty(TxtSearch.Text) ? Visibility.Visible : Visibility.Collapsed;
             }
             ApplyProjectFilter();
+        }
+
+        private void ChkFilterFavorite_Changed(object sender, RoutedEventArgs e)
+        {
+            ApplyProjectFilter();
+            SaveSettings();
         }
 
         #endregion
@@ -297,12 +365,47 @@ namespace UnityHubCustom
             {
                 var proc = _launcherService.LaunchUnityEditor(editorPath, project.Path);
                 LogMessage($"Unity Editor 실행 성공 (PID: {proc.Id}, 버전: {project.Version}, 에디터: {editorPath})");
+
+                // Update LastOpened and sort to top
+                project.LastOpened = DateTime.Now;
+                _projectService.SaveCustomProjects(_allProjects);
+                SortProjects();
+                ApplyProjectFilter();
             }
             catch (Exception ex)
             {
                 LogMessage($"Unity Editor 실행 오류: {ex.Message}");
                 MessageBox.Show(this, $"Unity 실행 중 오류가 발생했습니다:\n{ex.Message}", "실행 오류", MessageBoxButton.OK, MessageBoxImage.Error);
             }
+        }
+
+        #endregion
+
+        #region Favorite Actions
+
+        private void BtnToggleFavorite_Click(object sender, RoutedEventArgs e)
+        {
+            if ((sender as FrameworkElement)?.Tag is UnityProject project)
+            {
+                ToggleProjectFavorite(project);
+            }
+        }
+
+        private void MenuToggleFavorite_Click(object sender, RoutedEventArgs e)
+        {
+            if (GetProjectFromMenuItem(sender) is UnityProject project)
+            {
+                ToggleProjectFavorite(project);
+            }
+        }
+
+        private void ToggleProjectFavorite(UnityProject project)
+        {
+            project.IsFavorite = !project.IsFavorite;
+            _projectService.SaveCustomProjects(_allProjects);
+            ApplyProjectFilter();
+            UpdateStatusSummary();
+            LogMessage($"[{project.Name}] 즐겨찾기 {(project.IsFavorite ? "등록" : "해제")}");
         }
 
         #endregion
@@ -421,8 +524,10 @@ namespace UnityHubCustom
                         newProject.MatchedEditorPath = matched.ExecutablePath;
                     }
 
+                    newProject.LastOpened = DateTime.Now;
                     _allProjects.Insert(0, newProject);
                     _projectService.SaveCustomProjects(_allProjects);
+                    SortProjects();
                     ApplyProjectFilter();
                     UpdateStatusSummary();
                     LogMessage($"새 프로젝트 추가됨: {newProject.Name} (버전: {newProject.Version})");
