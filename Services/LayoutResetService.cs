@@ -180,6 +180,53 @@ namespace UnityHubCustom.Services
             return StandardSafeLayout.Content;
         }
 
+        public static int CleanUnsafeRegistryWindowEntries()
+        {
+            int deleted = 0;
+            try
+            {
+                using (var key = Registry.CurrentUser.OpenSubKey(@"Software\Unity Technologies\Unity Editor 5.x", true))
+                {
+                    if (key != null)
+                    {
+                        foreach (var name in key.GetValueNames())
+                        {
+                            var lower = name.ToLowerInvariant();
+                            if (Regex.IsMatch(name, @"(?:window|[Vv]iew|[Pp]opup|[Pp]icker|[Dd]ropdown|[Ss]elector)[xywhz]_h\d+$", RegexOptions.IgnoreCase) ||
+                                lower.StartsWith("unityeditor.gameview") ||
+                                lower.StartsWith("unityeditor.sceneview") ||
+                                lower.StartsWith("unityeditor.mainview") ||
+                                lower.StartsWith("unityeditor.splitview") ||
+                                lower.StartsWith("unityeditor.tooltipview") ||
+                                lower.StartsWith("unityeditor.hierarchy") ||
+                                lower.StartsWith("unityeditor.projectbrowser") ||
+                                lower.StartsWith("unityeditor.inspector") ||
+                                lower.StartsWith("unityeditor.console") ||
+                                lower.Contains("savewindowlayout") ||
+                                lower.Contains("currentlayout") ||
+                                lower.Contains("restoredmainwindowsize") ||
+                                lower.Contains("ismainwindowmaximized") ||
+                                lower.Contains("windowx_") ||
+                                lower.Contains("windowy_") ||
+                                lower.Contains("windoww_") ||
+                                lower.Contains("windowh_") ||
+                                lower.Contains("windowz_"))
+                            {
+                                try
+                                {
+                                    key.DeleteValue(name, false);
+                                    deleted++;
+                                }
+                                catch { }
+                            }
+                        }
+                    }
+                }
+            }
+            catch { }
+            return deleted;
+        }
+
         public static bool EnsureSafeProjectLayout(string projectPath, out string noticeMessage)
         {
             noticeMessage = null;
@@ -190,30 +237,65 @@ namespace UnityHubCustom.Services
 
             try
             {
+                bool fixedAnything = false;
+
+                // 1. Clean registry window coordinates (removes off-screen x: -1072 GameView cache)
+                int regDeleted = CleanUnsafeRegistryWindowEntries();
+                if (regDeleted > 0) fixedAnything = true;
+
+                // 2. Clean global editor 'current' layout cache
+                try
+                {
+                    var appData = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
+                    var currentLayoutDir = Path.Combine(appData, "Unity", "Editor-5.x", "Preferences", "Layouts", "current");
+                    if (Directory.Exists(currentLayoutDir))
+                    {
+                        Directory.Delete(currentLayoutDir, true);
+                        fixedAnything = true;
+                    }
+                }
+                catch { }
+
+                // 3. Clean any stale Library layout files that could carry old multi-window state
+                try
+                {
+                    var lib = Path.Combine(projectPath, "Library");
+                    if (Directory.Exists(lib))
+                    {
+                        foreach (var f in Directory.GetFiles(lib, "CurrentLayout*.dwlt", SearchOption.TopDirectoryOnly))
+                        {
+                            try { File.Delete(f); fixedAnything = true; } catch { }
+                        }
+                    }
+                }
+                catch { }
+
+                // 4. Ensure UserSettings/Layouts/default-2023.dwlt exists and is safe
                 var userSettingsLayouts = Path.Combine(projectPath, "UserSettings", "Layouts");
                 var defaultDwlt = Path.Combine(userSettingsLayouts, "default-2023.dwlt");
 
-                bool needsFix = false;
+                bool needsLayoutWrite = false;
                 if (!File.Exists(defaultDwlt))
                 {
-                    needsFix = true;
+                    needsLayoutWrite = true;
                 }
                 else
                 {
                     var currentText = File.ReadAllText(defaultDwlt);
                     if (!IsLayoutSafe(currentText))
                     {
-                        needsFix = true;
+                        needsLayoutWrite = true;
                     }
                 }
 
-                if (needsFix)
+                if (needsLayoutWrite)
                 {
                     if (!Directory.Exists(userSettingsLayouts))
                         Directory.CreateDirectory(userSettingsLayouts);
 
                     var safeContent = GetSafeDefaultLayoutContent();
                     File.WriteAllText(defaultDwlt, safeContent);
+                    fixedAnything = true;
 
                     // Clean any other conflicting multi-window dwlt files in UserSettings
                     try
@@ -228,22 +310,11 @@ namespace UnityHubCustom.Services
                         }
                     }
                     catch { }
+                }
 
-                    // Clean any stale Library layout files that could carry old multi-window state
-                    try
-                    {
-                        var lib = Path.Combine(projectPath, "Library");
-                        if (Directory.Exists(lib))
-                        {
-                            foreach (var f in Directory.GetFiles(lib, "CurrentLayout*.dwlt", SearchOption.TopDirectoryOnly))
-                            {
-                                try { File.Delete(f); } catch { }
-                            }
-                        }
-                    }
-                    catch { }
-
-                    noticeMessage = "단일 창 안전 레이아웃 자동 적용 (2개 창 분리 및 백화 방지)";
+                if (fixedAnything)
+                {
+                    noticeMessage = "안전 가드: 오프스크린 레지스트리 및 레이아웃 자동 정상화 완료 (백화 방지)";
                     return true;
                 }
             }
