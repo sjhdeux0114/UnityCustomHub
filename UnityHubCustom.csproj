@@ -39,6 +39,7 @@
     <Reference Include="System" />
     <Reference Include="System.Core" />
     <Reference Include="System.Data" />
+    <Reference Include="System.Management" />
     <Reference Include="System.Web.Extensions" />
     <Reference Include="System.Windows.Forms" />
     <Reference Include="System.Xml" />
@@ -75,6 +76,7 @@
     <Compile Include="Services\ProjectService.cs" />
     <Compile Include="Services\LayoutResetService.cs" />
     <Compile Include="Services\ProcessLauncherService.cs" />
+    <Compile Include="Services\EditorProcessService.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
   </ItemGroup>
   <ItemGroup>

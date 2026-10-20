@@ -41,6 +41,20 @@
 
 ## ⚡ 레이아웃 초기화 (Reset) 상세 동작
 
+### 흰 화면 및 창 2개 열림 버그 해결 (v1.2.0)
+
+Unity 2023.1 등 특정 버전에서 다중 모니터 분리 레이아웃(`2monV.wlt` 등)을 사용한 뒤 다시 열 때 **에디터가 2개 열리고 흰 화면(White Screen) 상태로 멈추는 버그**가 완벽히 해결되었습니다.
+
+- **Unity Hub 프로세스 오탐 방지**: Unity Hub의 백그라운드 서비스(`unity.exe serve`)를 실제 에디터로 오인하여 전역 캐시/레지스트리 초기화가 건너뛰어지던 버그를 수정했습니다.
+- **단일 창 안전 기본 레이아웃 자동 복원**: 초기화 시 `UserSettings/Layouts/default-2023.dwlt`에 단일 컨테이너 윈도우(`m_ShowMode: 4`, `x: 0, y: 0`) 레이아웃을 자동 생성하여, 창이 2개 열리거나 음수 좌표로 분리되는 문제를 원천 차단합니다.
+- **전역 `Default.wlt` 오프스크린 좌표 자동 치유**: Unity 2023.1이 배포한 비정상 오프스크린 좌표(`x: 2249, y: 302.5`)를 주 모니터 영역(`x: 0, y: 0`)으로 자동 정상화합니다.
+- **레지스트리 잔여 창 좌표 소거**: `HKCU\Software\Unity Technologies\Unity Editor 5.x`에서 이전 다중 모니터 좌표/크기 관련 레지스트리 항목을 완전 정리합니다.
+- **남아 있는 Editor 종료**: 프로젝트의 `···` 메뉴 → **남아 있는 Editor 종료 (이 프로젝트만)** 에서 백그라운드에 멈춰 있는 해당 프로젝트의 프로세스를 안전하게 종료할 수 있습니다.
+- **그래픽 API 선택 지원**: DirectX 11 외에도 DirectX 12, OpenGL Core를 선택하여 실행할 수 있습니다.
+- 모든 실행은 `%LOCALAPPDATA%/UnityHubCustom/EditorLogs`에 별도 `-logFile`을 기록합니다. 프로젝트 메뉴에서 로그 폴더를 즉시 열 수 있습니다.
+
+회귀 검증: `scripts/EditorRecoveryTests.cs`를 실행하여 Unity Hub 프로세스 제외, 레이아웃 정상화, 실행 중 초기화 차단, 다른 프로젝트 보존 등 14개 항목에 대한 단위 테스트를 자동 수행합니다.
+
 `⚡ 리셋후 열기` 클릭 시 다음 작업이 순차적으로 안전하게 실행됩니다:
 
 ```mermaid
@@ -64,7 +78,7 @@ flowchart LR
      - `IsMainWindowMaximized*`
      - `UnityEditor.PopupWindow*`
 4. **Unity Editor 기동**:
-   - 해당 프로젝트에 매칭된 `Unity.exe`가 `-projectPath` 인자로 기동되어 완벽한 Default 레이아웃으로 열립니다.
+   - 해당 프로젝트에 매칭된 `Unity.exe`가 `-projectPath` 및 `-logFile` 인자로 기동됩니다. Editor 자체나 드라이버에 원인이 있으면 별도 진단이 필요합니다.
 
 ---
 

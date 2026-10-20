@@ -42,9 +42,15 @@ namespace UnityHubCustom
 
         private void MainWindow_Loaded(object sender, RoutedEventArgs e)
         {
+            var version = System.Reflection.Assembly.GetExecutingAssembly().GetName().Version;
+            var verStr = $"v{version.Major}.{version.Minor}.{version.Build}";
+            Title = $"Unity Hub+ {verStr} (Custom) - 프로젝트 관리 및 레이아웃 초기화";
+            if (TxtAppVersion != null) TxtAppVersion.Text = verStr;
+            if (TxtFooterVersion != null) TxtFooterVersion.Text = verStr;
+
             LoadSettings();
             RefreshAll();
-            LogMessage("Unity Hub+ 초기화 완료. 환영합니다!");
+            LogMessage($"Unity Hub+ {verStr} 초기화 완료 (에디터 백화 및 창 2개 열림 방지 패치 적용됨)");
         }
 
         private void MainWindow_Activated(object sender, EventArgs e)
@@ -99,6 +105,10 @@ namespace UnityHubCustom
             ChkResetProjectLayout.IsChecked = _settings.ResetProjectLayout;
             ChkResetEditorLayout.IsChecked = _settings.ResetEditorLayout;
             ChkResetRegistry.IsChecked = _settings.ResetRegistry;
+            var graphicsApi = _settings.GraphicsApi;
+            if (graphicsApi == "Default" && _settings.UseOpenGL) graphicsApi = "OpenGL";
+            foreach (ComboBoxItem item in CmbGraphicsApi.Items)
+                if ((string)item.Tag == graphicsApi) CmbGraphicsApi.SelectedItem = item;
             ChkSyncUnityHub.IsChecked = _settings.AutoSyncWithUnityHub;
             if (ChkFilterFavorite != null)
             {
@@ -118,6 +128,8 @@ namespace UnityHubCustom
                 _settings.ResetProjectLayout = ChkResetProjectLayout.IsChecked ?? true;
                 _settings.ResetEditorLayout = ChkResetEditorLayout.IsChecked ?? true;
                 _settings.ResetRegistry = ChkResetRegistry.IsChecked ?? true;
+                _settings.GraphicsApi = (string)((ComboBoxItem)CmbGraphicsApi.SelectedItem).Tag;
+                _settings.UseOpenGL = _settings.GraphicsApi == "OpenGL";
                 _settings.AutoSyncWithUnityHub = ChkSyncUnityHub.IsChecked ?? true;
                 _settings.FilterFavoritesOnly = ChkFilterFavorite?.IsChecked ?? false;
 
@@ -332,6 +344,14 @@ namespace UnityHubCustom
                 return;
             }
 
+            try { new EditorProcessService().EnsureProjectClosed(project.Path); }
+            catch (Exception ex)
+            {
+                LogMessage(ex.Message);
+                MessageBox.Show(this, ex.Message, "Editor 실행 확인", MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
+
             if (resetLayout)
             {
                 // Reset layouts before opening
@@ -352,6 +372,12 @@ namespace UnityHubCustom
                     LogMessage($"  ⚠ {err}");
                 }
 
+                if (!resetResult.Success)
+                {
+                    MessageBox.Show(this, string.Join("\n", resetResult.Errors), "초기화 실패", MessageBoxButton.OK, MessageBoxImage.Warning);
+                    return;
+                }
+
                 LogMessage($"[{project.Name}] 레이아웃 초기화 완료: {resetResult.SummaryText}");
                 TxtLastAction.Text = $"[{DateTime.Now:HH:mm:ss}] {project.Name} 레이아웃 초기화 후 실행 중...";
             }
@@ -363,8 +389,14 @@ namespace UnityHubCustom
 
             try
             {
-                var proc = _launcherService.LaunchUnityEditor(editorPath, project.Path);
-                LogMessage($"Unity Editor 실행 성공 (PID: {proc.Id}, 버전: {project.Version}, 에디터: {editorPath})");
+                SaveSettings();
+                var graphicsApi = (string)((ComboBoxItem)CmbGraphicsApi.SelectedItem).Tag;
+                var proc = _launcherService.LaunchUnityEditor(editorPath, project.Path, graphicsApi);
+                LogMessage($"Unity Editor 프로세스 시작 (PID: {proc.Id}, 버전: {project.Version}, 에디터: {editorPath})");
+                LogMessage("Editor 로그: " + _launcherService.LastLogPath);
+                LogMessage("그래픽 API 요청: " + ((ComboBoxItem)CmbGraphicsApi.SelectedItem).Content +
+                    " / 실행 인수:" + ProcessLauncherService.GetGraphicsArguments(graphicsApi));
+                proc.Dispose();
 
                 // Update LastOpened and sort to top
                 project.LastOpened = DateTime.Now;
@@ -430,6 +462,38 @@ namespace UnityHubCustom
             }
         }
 
+        private void MenuEditorLogs_Click(object sender, RoutedEventArgs e)
+        {
+            var path = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "UnityHubCustom", "EditorLogs");
+            Directory.CreateDirectory(path);
+            _launcherService.OpenInExplorer(path);
+        }
+
+        private async void MenuTerminateEditor_Click(object sender, RoutedEventArgs e)
+        {
+            var project = GetProjectFromMenuItem(sender);
+            if (project == null) return;
+            try
+            {
+                var service = new EditorProcessService();
+                var ids = service.FindEditors(project.Path);
+                if (ids.Count == 0)
+                {
+                    MessageBox.Show(this, "이 프로젝트의 실행 중인 Editor가 없습니다.");
+                    return;
+                }
+                if (MessageBox.Show(this, $"[{project.Name}] Editor (PID: {string.Join(", ", ids)})를 강제 종료합니다.\n저장하지 않은 작업이 손실됩니다. 계속하시겠습니까?", "남아 있는 Editor 종료", MessageBoxButton.YesNo, MessageBoxImage.Warning) != MessageBoxResult.Yes) return;
+                await System.Threading.Tasks.Task.Run(() => service.TerminateProjectEditors(project.Path));
+                LogMessage($"[{project.Name}] Editor 종료 확인 완료. 이제 리셋후 열기를 사용할 수 있습니다.");
+                MainWindow_Activated(this, EventArgs.Empty);
+            }
+            catch (Exception ex)
+            {
+                LogMessage("Editor 종료 오류: " + ex.Message);
+                MessageBox.Show(this, ex.Message, "Editor 종료 실패", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+        }
+
         private void MenuResetLayoutOnly_Click(object sender, RoutedEventArgs e)
         {
             if (GetProjectFromMenuItem(sender) is UnityProject project)
@@ -452,6 +516,11 @@ namespace UnityHubCustom
                     foreach (var msg in resetResult.Messages)
                     {
                         LogMessage($"  ✓ {msg}");
+                    }
+                    if (!resetResult.Success)
+                    {
+                        MessageBox.Show(this, string.Join("\n", resetResult.Errors), "초기화 실패", MessageBoxButton.OK, MessageBoxImage.Warning);
+                        return;
                     }
                     LogMessage($"[{project.Name}] 레이아웃만 초기화 완료: {resetResult.SummaryText}");
                     MessageBox.Show(this, $"레이아웃 초기화가 완료되었습니다.\n{resetResult.SummaryText}", "초기화 완료", MessageBoxButton.OK, MessageBoxImage.Information);
