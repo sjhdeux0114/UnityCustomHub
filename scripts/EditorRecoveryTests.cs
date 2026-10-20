@@ -31,6 +31,22 @@ class EditorRecoveryTests
             var corruptYaml = "m_PixelRect:\r\n  serializedVersion: 2\r\n  x: 2249\r\n  y: 302.5\r\n  width: 1206\r\n  height: 715\r\nm_ShowMode: 4";
             var sanitizedYaml = LayoutResetService.SanitizeLayoutText(corruptYaml);
             Check(sanitizedYaml.Contains("x: 0") && sanitizedYaml.Contains("y: 0") && !sanitizedYaml.Contains("2249"), "Offscreen x:2249 coordinates sanitized to x:0, y:0");
+
+            // Multi-window & detached view safety checks
+            var multiWindowYaml = "m_ShowMode: 0\r\nx: -1080\r\nm_ShowMode: 4";
+            Check(!LayoutResetService.IsLayoutSafe(multiWindowYaml), "Multi-window layout recognized as unsafe");
+            var fixedMulti = LayoutResetService.SanitizeLayoutText(multiWindowYaml);
+            Check(LayoutResetService.IsLayoutSafe(fixedMulti), "Multi-window layout sanitized to safe single-window layout");
+
+            // EnsureSafeProjectLayout check
+            string notice;
+            var safeProjectDir = Path.Combine(project, "SafeProjectCheck");
+            Directory.CreateDirectory(Path.Combine(safeProjectDir, "UserSettings", "Layouts"));
+            File.WriteAllText(Path.Combine(safeProjectDir, "UserSettings", "Layouts", "default-2023.dwlt"), multiWindowYaml);
+            Check(LayoutResetService.EnsureSafeProjectLayout(safeProjectDir, out notice), "Unsafe project layout intercepted and fixed");
+            Check(File.Exists(Path.Combine(safeProjectDir, "UserSettings", "Layouts", "default-2023.dwlt")), "Safe dwlt file present");
+            Check(LayoutResetService.IsLayoutSafe(File.ReadAllText(Path.Combine(safeProjectDir, "UserSettings", "Layouts", "default-2023.dwlt"))), "Repaired dwlt content is safe");
+            Check(!LayoutResetService.EnsureSafeProjectLayout(safeProjectDir, out notice), "Already safe layout requires no modification");
             child = Process.Start(new ProcessStartInfo { FileName = typeof(EditorRecoveryTests).Assembly.Location, Arguments = "-projectPath \"" + project + "\"", UseShellExecute = false, CreateNoWindow = true });
             var service = new EditorProcessService();
             Check(service.FindEditors(project).Contains(child.Id), "Discover Editor by project");

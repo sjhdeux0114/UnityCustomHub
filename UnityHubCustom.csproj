@@ -77,6 +77,7 @@
     <Compile Include="Services\LayoutResetService.cs" />
     <Compile Include="Services\ProcessLauncherService.cs" />
     <Compile Include="Services\EditorProcessService.cs" />
+    <Compile Include="Templates\StandardSafeLayout.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
   </ItemGroup>
   <ItemGroup>

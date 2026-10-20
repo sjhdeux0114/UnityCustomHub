@@ -4,6 +4,7 @@ using System.Diagnostics;
 using System.IO;
 using System.Text.RegularExpressions;
 using Microsoft.Win32;
+using UnityHubCustom.Templates;
 
 namespace UnityHubCustom.Services
 {
@@ -74,9 +75,36 @@ namespace UnityHubCustom.Services
             return result;
         }
 
+        public static bool IsLayoutSafe(string yamlText)
+        {
+            if (string.IsNullOrWhiteSpace(yamlText) || yamlText.Length < 100) return false;
+
+            // Multiple windows / floating detached window check
+            if (yamlText.IndexOf("m_ShowMode: 0", StringComparison.OrdinalIgnoreCase) >= 0) return false;
+
+            var showModeMatches = Regex.Matches(yamlText, @"m_ShowMode:\s*\d+");
+            if (showModeMatches.Count > 1) return false;
+
+            // Offscreen coordinates check (negative or >= 2000)
+            if (Regex.IsMatch(yamlText, @"m_Pos:\s*\r?\n\s*serializedVersion:\s*\d+\s*\r?\n\s*x:\s*(?:-[0-9]|[2-9]\d{3}|\d{5,})")) return false;
+            if (Regex.IsMatch(yamlText, @"m_PixelRect:\s*\r?\n\s*serializedVersion:\s*\d+\s*\r?\n\s*x:\s*(?:-[0-9]|[2-9]\d{3}|\d{5,})")) return false;
+
+            // GameView detached out-of-screen check (x: 507, width: 1532 -> 2039)
+            if (yamlText.IndexOf("507", StringComparison.Ordinal) >= 0 && yamlText.IndexOf("1532", StringComparison.Ordinal) >= 0) return false;
+
+            return true;
+        }
+
         public static string SanitizeLayoutText(string yamlText)
         {
-            if (string.IsNullOrWhiteSpace(yamlText)) return yamlText;
+            if (string.IsNullOrWhiteSpace(yamlText)) return StandardSafeLayout.Content;
+
+            // If layout has multiple container windows or detached floating windows, replace with standard safe layout
+            var showModeMatches = Regex.Matches(yamlText, @"m_ShowMode:\s*\d+");
+            if (showModeMatches.Count > 1 || yamlText.IndexOf("m_ShowMode: 0", StringComparison.OrdinalIgnoreCase) >= 0)
+            {
+                return StandardSafeLayout.Content;
+            }
 
             // Fix off-screen or corrupted coordinates (e.g., Unity 2023.1 shipped with x: 2249, y: 302.5)
             yamlText = Regex.Replace(
@@ -103,10 +131,35 @@ namespace UnityHubCustom.Services
                 "${1}1040"
             );
 
+            // Fix all m_Pos coordinates where x >= 2000 (e.g. subtract 2249)
+            yamlText = Regex.Replace(yamlText, @"(m_Pos:\s*\r?\n\s*serializedVersion:\s*\d+\s*\r?\n\s*x:\s*)([2-9]\d{3}|\d{5,})", m =>
+            {
+                double x = double.Parse(m.Groups[2].Value);
+                return m.Groups[1].Value + Math.Max(0, (int)(x - 2249));
+            });
+
+            // Fix all m_Pos coordinates where y >= 300
+            yamlText = Regex.Replace(yamlText, @"(m_Pos:\s*\r?\n\s*serializedVersion:\s*\d+\s*\r?\n\s*x:\s*\d+\s*\r?\n\s*y:\s*)([3-9]\d{2}|\d{4,})(\.\d+)?", m =>
+            {
+                double y = double.Parse(m.Groups[2].Value);
+                return m.Groups[1].Value + Math.Max(30, (int)(y - 302.5));
+            });
+
+            // Fix specifically GameView (x: 507, y: 94, width: 1532, height: 790) docked with SceneView (x: 228, y: 30, width: 691, height: 373)
+            yamlText = Regex.Replace(yamlText,
+                @"(m_Pos:\s*\r?\n\s*serializedVersion:\s*\d+\s*\r?\n\s*x:\s*)507(\r?\n\s*y:\s*)94(\r?\n\s*width:\s*)1532(\r?\n\s*height:\s*)790",
+                "${1}228${2}30${3}691${4}373");
+
+            // For comprehensive full layouts, verify safety; fallback to standard safe layout if still not safe
+            if (yamlText.Length > 500 && !IsLayoutSafe(yamlText))
+            {
+                return StandardSafeLayout.Content;
+            }
+
             return yamlText;
         }
 
-        private string GetSafeDefaultLayoutContent()
+        public static string GetSafeDefaultLayoutContent()
         {
             try
             {
@@ -115,12 +168,91 @@ namespace UnityHubCustom.Services
                 if (File.Exists(defaultWltPath))
                 {
                     var text = File.ReadAllText(defaultWltPath);
-                    return SanitizeLayoutText(text);
+                    var sanitized = SanitizeLayoutText(text);
+                    if (IsLayoutSafe(sanitized))
+                    {
+                        return sanitized;
+                    }
                 }
             }
             catch { }
 
-            return null;
+            return StandardSafeLayout.Content;
+        }
+
+        public static bool EnsureSafeProjectLayout(string projectPath, out string noticeMessage)
+        {
+            noticeMessage = null;
+            if (string.IsNullOrWhiteSpace(projectPath) || !Directory.Exists(projectPath))
+            {
+                return false;
+            }
+
+            try
+            {
+                var userSettingsLayouts = Path.Combine(projectPath, "UserSettings", "Layouts");
+                var defaultDwlt = Path.Combine(userSettingsLayouts, "default-2023.dwlt");
+
+                bool needsFix = false;
+                if (!File.Exists(defaultDwlt))
+                {
+                    needsFix = true;
+                }
+                else
+                {
+                    var currentText = File.ReadAllText(defaultDwlt);
+                    if (!IsLayoutSafe(currentText))
+                    {
+                        needsFix = true;
+                    }
+                }
+
+                if (needsFix)
+                {
+                    if (!Directory.Exists(userSettingsLayouts))
+                        Directory.CreateDirectory(userSettingsLayouts);
+
+                    var safeContent = GetSafeDefaultLayoutContent();
+                    File.WriteAllText(defaultDwlt, safeContent);
+
+                    // Clean any other conflicting multi-window dwlt files in UserSettings
+                    try
+                    {
+                        var dwltFiles = Directory.GetFiles(userSettingsLayouts, "*.dwlt", SearchOption.TopDirectoryOnly);
+                        foreach (var f in dwltFiles)
+                        {
+                            if (!string.Equals(Path.GetFileName(f), "default-2023.dwlt", StringComparison.OrdinalIgnoreCase))
+                            {
+                                try { File.Delete(f); } catch { }
+                            }
+                        }
+                    }
+                    catch { }
+
+                    // Clean any stale Library layout files that could carry old multi-window state
+                    try
+                    {
+                        var lib = Path.Combine(projectPath, "Library");
+                        if (Directory.Exists(lib))
+                        {
+                            foreach (var f in Directory.GetFiles(lib, "CurrentLayout*.dwlt", SearchOption.TopDirectoryOnly))
+                            {
+                                try { File.Delete(f); } catch { }
+                            }
+                        }
+                    }
+                    catch { }
+
+                    noticeMessage = "단일 창 안전 레이아웃 자동 적용 (2개 창 분리 및 백화 방지)";
+                    return true;
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine("EnsureSafeProjectLayout error: " + ex.Message);
+            }
+
+            return false;
         }
 
         private void ResetProjectLayout(string projectPath, ResetResult result)
@@ -327,6 +459,13 @@ namespace UnityHubCustom.Services
                             result.Messages.Add("전역 Default.wlt 오프스크린 좌표(x:2249) 정상화 완료 (x:0, y:0)");
                         }
                     }
+                    else
+                    {
+                        var defaultDir = Path.Combine(editorLayoutsDir, "default");
+                        if (!Directory.Exists(defaultDir)) Directory.CreateDirectory(defaultDir);
+                        File.WriteAllText(defaultWltPath, StandardSafeLayout.Content);
+                        result.Messages.Add("전역 Default.wlt 안전 기본 레이아웃 생성 완료");
+                    }
                 }
                 catch (Exception ex)
                 {
@@ -359,10 +498,17 @@ namespace UnityHubCustom.Services
                                 lower.Contains("ismainwindowmaximized") ||
                                 lower.Contains("currentlayout") ||
                                 lower.StartsWith("unityeditor.mainview") ||
+                                lower.StartsWith("unityeditor.gameview") ||
+                                lower.StartsWith("unityeditor.sceneview") ||
+                                lower.StartsWith("unityeditor.hierarchy") ||
+                                lower.StartsWith("unityeditor.projectbrowser") ||
+                                lower.StartsWith("unityeditor.inspector") ||
+                                lower.StartsWith("unityeditor.console") ||
                                 lower.StartsWith("defaultwindow") ||
                                 lower.StartsWith("unityeditor.popupwindow") ||
                                 lower.StartsWith("unityeditor.preferencesettingswindow") ||
                                 lower.StartsWith("unityeditor.imgui.controls.advanceddropdownwindow") ||
+                                Regex.IsMatch(name, @"[xywhz]_h\d+$", RegexOptions.IgnoreCase) ||
                                 lower.Contains("windowx_") ||
                                 lower.Contains("windowy_") ||
                                 lower.Contains("windoww_") ||

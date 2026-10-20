@@ -1,7 +1,7 @@
 <Window x:Class="UnityHubCustom.MainWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="Unity Hub+ v1.2.0 (Custom) - 프로젝트 관리 및 레이아웃 초기화"
+        Title="Unity Hub+ v1.2.1 (Custom) - 프로젝트 관리 및 레이아웃 초기화"
         Icon="app.ico"
         Height="720" Width="1080"
         MinHeight="600" MinWidth="850"
@@ -36,7 +36,7 @@
                         <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
                             <TextBlock Text="Unity Hub+" Foreground="#F4F4F5" FontSize="17" FontWeight="Bold"/>
                             <Border Background="#27272A" BorderBrush="#3F3F46" BorderThickness="1" CornerRadius="4" Margin="8,0,0,0" Padding="5,1">
-                                <TextBlock x:Name="TxtAppVersion" Text="v1.2.0" Foreground="#A1A1AA" FontSize="11" FontWeight="SemiBold"/>
+                                <TextBlock x:Name="TxtAppVersion" Text="v1.2.1" Foreground="#A1A1AA" FontSize="11" FontWeight="SemiBold"/>
                             </Border>
                             <Border Background="#3B2D18" BorderBrush="#D97706" BorderThickness="1" CornerRadius="4" Margin="6,0,0,0" Padding="6,1">
                                 <TextBlock Text="Layout Reset" Foreground="#F59E0B" FontSize="11" FontWeight="SemiBold"/>

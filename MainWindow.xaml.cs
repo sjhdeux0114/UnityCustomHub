@@ -384,6 +384,11 @@ namespace UnityHubCustom
             else
             {
                 LogMessage($"[{project.Name}] 일반 실행 시작...");
+                // Pre-launch crash prevention guard: ensure layout is single-window & within screen bounds
+                if (LayoutResetService.EnsureSafeProjectLayout(project.Path, out string notice))
+                {
+                    LogMessage($"  ✓ [{project.Name}] {notice}");
+                }
                 TxtLastAction.Text = $"[{DateTime.Now:HH:mm:ss}] {project.Name} 실행 중...";
             }
 
